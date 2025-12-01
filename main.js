@@ -164,6 +164,12 @@ function loadAudio(file) {
     audioElement = new Audio();
     audioElement.src = URL.createObjectURL(file);
 
+    // Add ended event listener
+    audioElement.addEventListener('ended', () => {
+        isPlaying = false;
+        status.textContent = 'Music Ended';
+    });
+
     if (!audioContext) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
         analyser = audioContext.createAnalyser();
@@ -200,6 +206,14 @@ pauseBtn.addEventListener('click', () => {
         status.textContent = 'Paused';
     }
 });
+
+// Detect when audio ends
+if (audioElement) {
+    audioElement.addEventListener('ended', () => {
+        isPlaying = false;
+        status.textContent = 'Music Ended';
+    });
+}
 
 // Advanced onset detection with frequency bands
 let energyHistory = [];
