@@ -9,7 +9,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 document.getElementById('canvas-container').appendChild(renderer.domElement);
 
 // Night sky background
-scene.background = new THREE.Color(0x000000);
+scene.background = new THREE.Color(0x000033);
 camera.position.z = 5;
 
 // Create stars
@@ -32,13 +32,13 @@ function createStars() {
 
 createStars();
 
-// Firework class
+// Firework class with variable speed/size
 class Firework {
-    constructor(x, y, color) {
+    constructor(x, y, color, intensity = 1, speed = 1) {
         this.particles = [];
         this.dead = false;
 
-        const particleCount = 100;
+        const particleCount = Math.floor(80 + intensity * 60); // More particles for louder sounds
         const geometry = new THREE.BufferGeometry();
         const positions = [];
 
@@ -50,7 +50,7 @@ class Firework {
 
         const material = new THREE.PointsMaterial({
             color: color,
-            size: 0.1,
+            size: 0.08 + intensity * 0.05,
             transparent: true,
             opacity: 1
         });
@@ -58,22 +58,24 @@ class Firework {
         this.points = new THREE.Points(geometry, material);
         scene.add(this.points);
 
-        // Create velocity for each particle
+        // Create velocity for each particle - speed affects explosion size
         this.velocities = [];
+        const baseSpeed = 0.02 * speed;
         for (let i = 0; i < particleCount; i++) {
             const theta = Math.random() * Math.PI * 2;
             const phi = Math.random() * Math.PI;
-            const speed = Math.random() * 0.05 + 0.02;
+            const particleSpeed = baseSpeed + Math.random() * baseSpeed * 0.5;
 
             this.velocities.push({
-                x: Math.sin(phi) * Math.cos(theta) * speed,
-                y: Math.sin(phi) * Math.sin(theta) * speed,
-                z: Math.cos(phi) * speed
+                x: Math.sin(phi) * Math.cos(theta) * particleSpeed,
+                y: Math.sin(phi) * Math.sin(theta) * particleSpeed,
+                z: Math.cos(phi) * particleSpeed
             });
         }
 
         this.age = 0;
-        this.maxAge = 120;
+        // Longer duration for slower/sustained notes
+        this.maxAge = Math.floor(80 + (1 / speed) * 40);
     }
 
     update() {
@@ -87,7 +89,7 @@ class Firework {
             positions[idx + 2] += this.velocities[i].z;
 
             // Gravity
-            this.velocities[i].y -= 0.001;
+            this.velocities[i].y -= 0.0008;
         }
 
         this.points.geometry.attributes.position.needsUpdate = true;
@@ -107,12 +109,24 @@ class Firework {
 // Fireworks array
 const fireworks = [];
 
-function launchFirework() {
+function launchFirework(intensity = 1, speed = 1, frequencyBand = 0.5) {
     const x = (Math.random() - 0.5) * 8;
     const y = (Math.random() - 0.5) * 4 + 2;
-    const color = new THREE.Color(Math.random(), Math.random(), Math.random());
 
-    const firework = new Firework(x, y, color);
+    // Color based on frequency band (low = red, mid = green, high = blue)
+    let color;
+    if (frequencyBand < 0.33) {
+        // Low frequencies - warm colors
+        color = new THREE.Color(1, Math.random() * 0.5, Math.random() * 0.3);
+    } else if (frequencyBand < 0.66) {
+        // Mid frequencies - varied colors
+        color = new THREE.Color(Math.random(), Math.random() * 0.8 + 0.2, Math.random());
+    } else {
+        // High frequencies - cool colors
+        color = new THREE.Color(Math.random() * 0.3, Math.random() * 0.5 + 0.5, 1);
+    }
+
+    const firework = new Firework(x, y, color, intensity, speed);
     fireworks.push(firework);
 }
 
@@ -153,7 +167,8 @@ function loadAudio(file) {
     if (!audioContext) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
         analyser = audioContext.createAnalyser();
-        analyser.fftSize = 512;
+        analyser.fftSize = 2048; // Higher resolution for better note detection
+        analyser.smoothingTimeConstant = 0.6;
         dataArray = new Uint8Array(analyser.frequencyBinCount);
     }
 
@@ -186,61 +201,100 @@ pauseBtn.addEventListener('click', () => {
     }
 });
 
-// Beat detection
-let lastBeatTime = 0;
-const beatThreshold = 20; // Lowered threshold
-const beatCooldown = 0; // ms between beats
-let beatHistory = [];
+// Advanced onset detection with frequency bands
+let previousFrameData = null;
+let onsetHistory = [];
+let lastOnsetTime = 0;
+const onsetCooldown = 100; // Minimum time between onsets in ms
 
-function detectBeat() {
-    if (!analyser || !isPlaying) return false;
+function detectOnsets() {
+    if (!analyser || !isPlaying) return [];
 
     analyser.getByteFrequencyData(dataArray);
 
-    // Calculate average of lower frequencies (bass/kick)
-    let sum = 0;
-    const bassEnd = Math.floor(dataArray.length * 0.15);
-    for (let i = 0; i < bassEnd; i++) {
-        sum += dataArray[i];
+    if (!previousFrameData) {
+        previousFrameData = new Uint8Array(dataArray);
+        return [];
     }
-    const average = sum / bassEnd;
-
-    // Keep history for dynamic threshold
-    beatHistory.push(average);
-    if (beatHistory.length > 50) {
-        beatHistory.shift();
-    }
-
-    // Calculate dynamic threshold based on recent history
-    const historyAvg = beatHistory.reduce((a, b) => a + b, 0) / beatHistory.length;
-    const dynamicThreshold = Math.max(beatThreshold, historyAvg * 1.3);
 
     const now = Date.now();
-    if (average > dynamicThreshold && now - lastBeatTime > beatCooldown) {
-        lastBeatTime = now;
-        return true;
+    if (now - lastOnsetTime < onsetCooldown) {
+        return [];
     }
 
-    return false;
+    const onsets = [];
+    const numBands = 6; // Split frequency spectrum into bands
+    const bandSize = Math.floor(dataArray.length / numBands);
+
+    for (let band = 0; band < numBands; band++) {
+        const start = band * bandSize;
+        const end = start + bandSize;
+
+        let currentEnergy = 0;
+        let previousEnergy = 0;
+
+        // Calculate energy for this frequency band
+        for (let i = start; i < end; i++) {
+            currentEnergy += dataArray[i] * dataArray[i];
+            previousEnergy += previousFrameData[i] * previousFrameData[i];
+        }
+
+        currentEnergy = Math.sqrt(currentEnergy / bandSize);
+        previousEnergy = Math.sqrt(previousEnergy / bandSize);
+
+        // Detect sudden increase in energy (onset)
+        const diff = currentEnergy - previousEnergy;
+        const threshold = 15 + previousEnergy * 0.1; // Adaptive threshold
+
+        if (diff > threshold && currentEnergy > 30) {
+            // Calculate speed based on how sudden the onset is
+            const speed = Math.min(2.5, 0.5 + (diff / 50));
+            // Intensity based on overall volume
+            const intensity = Math.min(1.5, currentEnergy / 100);
+            // Frequency band position (0 to 1)
+            const freqPosition = band / numBands;
+
+            onsets.push({
+                intensity: intensity,
+                speed: speed,
+                frequencyBand: freqPosition,
+                band: band
+            });
+        }
+    }
+
+    // Store current frame for next comparison
+    previousFrameData = new Uint8Array(dataArray);
+
+    if (onsets.length > 0) {
+        lastOnsetTime = now;
+    }
+
+    return onsets;
 }
 
 // Animation loop
+let fireworkCounter = 0;
+
 function animate() {
     requestAnimationFrame(animate);
 
-    // Beat detection and debug info
-    if (detectBeat()) {
-        launchFirework();
-        // Visual feedback
-        status.textContent = 'BOOM!';
-        setTimeout(() => {
-            if (isPlaying) status.textContent = 'Playing...';
-        }, 100);
-    }
+    // Detect onsets and launch fireworks
+    if (isPlaying) {
+        const onsets = detectOnsets();
 
-    // Also launch fireworks periodically if audio is playing (fallback)
-    if (isPlaying && Math.random() < 0.01) { // 1% chance per frame
-        launchFirework();
+        if (onsets.length > 0) {
+            // Launch firework for each detected onset (up to 3 per frame to avoid overwhelming)
+            const maxFireworks = Math.min(3, onsets.length);
+            for (let i = 0; i < maxFireworks; i++) {
+                const onset = onsets[i];
+                launchFirework(onset.intensity, onset.speed, onset.frequencyBand);
+                fireworkCounter++;
+            }
+
+            // Visual feedback
+            status.textContent = `🎆 Playing... (${fireworkCounter} fireworks)`;
+        }
     }
 
     // Update fireworks
@@ -261,4 +315,4 @@ window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-    animate();
+animate();
