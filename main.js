@@ -202,55 +202,80 @@ pauseBtn.addEventListener('click', () => {
 });
 
 // Advanced onset detection with frequency bands
-let previousFrameData = null;
-let onsetHistory = [];
-let lastOnsetTime = 0;
-const onsetCooldown = 100; // Minimum time between onsets in ms
+let energyHistory = [];
+let lastOnsetTimes = {}; // Track per-band cooldowns
+const onsetCooldown = 80; // Minimum time between onsets per band in ms
+const historySize = 10; // Frames to keep for averaging
 
 function detectOnsets() {
     if (!analyser || !isPlaying) return [];
 
     analyser.getByteFrequencyData(dataArray);
 
-    if (!previousFrameData) {
-        previousFrameData = new Uint8Array(dataArray);
-        return [];
-    }
-
-    const now = Date.now();
-    if (now - lastOnsetTime < onsetCooldown) {
-        return [];
-    }
-
     const onsets = [];
-    const numBands = 6; // Split frequency spectrum into bands
+    const numBands = 8; // More bands for better note detection
     const bandSize = Math.floor(dataArray.length / numBands);
 
+    // Calculate current energy for all bands
+    const currentBandEnergies = [];
     for (let band = 0; band < numBands; band++) {
         const start = band * bandSize;
         const end = start + bandSize;
 
-        let currentEnergy = 0;
-        let previousEnergy = 0;
-
-        // Calculate energy for this frequency band
+        let energy = 0;
         for (let i = start; i < end; i++) {
-            currentEnergy += dataArray[i] * dataArray[i];
-            previousEnergy += previousFrameData[i] * previousFrameData[i];
+            energy += dataArray[i];
+        }
+        energy = energy / bandSize; // Average energy
+        currentBandEnergies.push(energy);
+    }
+
+    // Add to history
+    energyHistory.push(currentBandEnergies);
+    if (energyHistory.length > historySize) {
+        energyHistory.shift();
+    }
+
+    // Need at least a few frames of history
+    if (energyHistory.length < 3) {
+        return [];
+    }
+
+    const now = Date.now();
+
+    // Check each band for onsets
+    for (let band = 0; band < numBands; band++) {
+        // Check cooldown for this specific band
+        if (lastOnsetTimes[band] && now - lastOnsetTimes[band] < onsetCooldown) {
+            continue;
         }
 
-        currentEnergy = Math.sqrt(currentEnergy / bandSize);
-        previousEnergy = Math.sqrt(previousEnergy / bandSize);
+        const currentEnergy = currentBandEnergies[band];
 
-        // Detect sudden increase in energy (onset)
-        const diff = currentEnergy - previousEnergy;
-        const threshold = 15 + previousEnergy * 0.1; // Adaptive threshold
+        // Calculate average energy for this band over history
+        let avgEnergy = 0;
+        for (let i = 0; i < energyHistory.length - 1; i++) { // Exclude current frame
+            avgEnergy += energyHistory[i][band];
+        }
+        avgEnergy = avgEnergy / (energyHistory.length - 1);
 
-        if (diff > threshold && currentEnergy > 30) {
+        // Calculate variance for adaptive threshold
+        let variance = 0;
+        for (let i = 0; i < energyHistory.length - 1; i++) {
+            const diff = energyHistory[i][band] - avgEnergy;
+            variance += diff * diff;
+        }
+        variance = Math.sqrt(variance / (energyHistory.length - 1));
+
+        // Onset detection: current energy significantly exceeds recent average
+        const threshold = avgEnergy + Math.max(8, variance * 1.5);
+        const energyIncrease = currentEnergy - avgEnergy;
+
+        if (currentEnergy > threshold && energyIncrease > 5 && currentEnergy > 20) {
             // Calculate speed based on how sudden the onset is
-            const speed = Math.min(2.5, 0.5 + (diff / 50));
+            const speed = Math.min(2.5, 0.8 + (energyIncrease / 30));
             // Intensity based on overall volume
-            const intensity = Math.min(1.5, currentEnergy / 100);
+            const intensity = Math.min(1.5, currentEnergy / 80);
             // Frequency band position (0 to 1)
             const freqPosition = band / numBands;
 
@@ -260,14 +285,9 @@ function detectOnsets() {
                 frequencyBand: freqPosition,
                 band: band
             });
+
+            lastOnsetTimes[band] = now;
         }
-    }
-
-    // Store current frame for next comparison
-    previousFrameData = new Uint8Array(dataArray);
-
-    if (onsets.length > 0) {
-        lastOnsetTime = now;
     }
 
     return onsets;
