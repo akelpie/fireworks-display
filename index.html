@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music-Reactive Fireworks</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+            color: white;
+            text-align: center;
+        }
+        
+        #file-input {
+            display: none;
+        }
+        
+        .btn {
+            background: #4CAF50;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        
+        .btn:hover {
+            background: #45a049;
+        }
+        
+        .btn:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        
+        #status {
+            margin-top: 10px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    
+    <div id="ui">
+        <h2>🎆 Music-Reactive Fireworks 🎆</h2>
+        <p>Upload an audio file to start the show!</p>
+        <input type="file" id="file-input" accept="audio/*">
+        <button class="btn" id="upload-btn">Upload Audio</button>
+        <button class="btn" id="play-btn" disabled>Play</button>
+        <button class="btn" id="pause-btn" disabled>Pause</button>
+        <div id="status"></div>
+    </div>
+    
+    <script type="module" src="/main.js"></script>
+</body>
+</html>
