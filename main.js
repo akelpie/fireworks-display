@@ -9,7 +9,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 document.getElementById('canvas-container').appendChild(renderer.domElement);
 
 // Night sky background
-scene.background = new THREE.Color(0x000033);
+scene.background = new THREE.Color(0x000000);
 camera.position.z = 5;
 
 // Create stars
@@ -188,24 +188,35 @@ pauseBtn.addEventListener('click', () => {
 
 // Beat detection
 let lastBeatTime = 0;
-const beatThreshold = 200;
-const beatCooldown = 300; // ms between beats
+const beatThreshold = 20; // Lowered threshold
+const beatCooldown = 0; // ms between beats
+let beatHistory = [];
 
 function detectBeat() {
     if (!analyser || !isPlaying) return false;
 
     analyser.getByteFrequencyData(dataArray);
 
-    // Calculate average bass frequencies
+    // Calculate average of lower frequencies (bass/kick)
     let sum = 0;
-    const bassEnd = Math.floor(dataArray.length * 0.2);
+    const bassEnd = Math.floor(dataArray.length * 0.15);
     for (let i = 0; i < bassEnd; i++) {
         sum += dataArray[i];
     }
     const average = sum / bassEnd;
 
+    // Keep history for dynamic threshold
+    beatHistory.push(average);
+    if (beatHistory.length > 50) {
+        beatHistory.shift();
+    }
+
+    // Calculate dynamic threshold based on recent history
+    const historyAvg = beatHistory.reduce((a, b) => a + b, 0) / beatHistory.length;
+    const dynamicThreshold = Math.max(beatThreshold, historyAvg * 1.3);
+
     const now = Date.now();
-    if (average > beatThreshold && now - lastBeatTime > beatCooldown) {
+    if (average > dynamicThreshold && now - lastBeatTime > beatCooldown) {
         lastBeatTime = now;
         return true;
     }
@@ -217,8 +228,18 @@ function detectBeat() {
 function animate() {
     requestAnimationFrame(animate);
 
-    // Beat detection
+    // Beat detection and debug info
     if (detectBeat()) {
+        launchFirework();
+        // Visual feedback
+        status.textContent = 'BOOM!';
+        setTimeout(() => {
+            if (isPlaying) status.textContent = 'Playing...';
+        }, 100);
+    }
+
+    // Also launch fireworks periodically if audio is playing (fallback)
+    if (isPlaying && Math.random() < 0.01) { // 1% chance per frame
         launchFirework();
     }
 
@@ -240,4 +261,4 @@ window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-animate();
+    animate();
