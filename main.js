@@ -9,7 +9,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 document.getElementById('canvas-container').appendChild(renderer.domElement);
 
 // Night sky background
-scene.background = new THREE.Color(0x000033);
+scene.background = new THREE.Color(0x010C18);
 camera.position.z = 5;
 
 // Create stars
