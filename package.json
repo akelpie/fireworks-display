@@ -1,4 +1,13 @@
 {
+  "name": "fireworks-display",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
   "dependencies": {
     "three": "^0.181.2"
   },
